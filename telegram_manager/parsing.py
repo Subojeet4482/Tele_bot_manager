@@ -1,0 +1,113 @@
+"""Pure text parsing for commands and wizard answers (no Telegram imports)."""
+from __future__ import annotations
+
+import re
+from dataclasses import dataclass
+from datetime import datetime
+from datetime import time as dtime
+
+from telegram_manager.constants import BULK_DELAY_MAX, BULK_DELAY_MIN, MAX_TIMES_PER_DAY
+
+_USERNAME = re.compile(r"^@?[A-Za-z][A-Za-z0-9_]{4,31}$")
+_CHAT_ID = re.compile(r"^-?\d{5,20}$")
+_PHONE = re.compile(r"^\+\d{7,15}$")
+_TAIL_CONFIRM = re.compile(r"(?:^|\s)(y|yes|n|no)\s*$", re.I)
+_TAIL_DELAY = re.compile(r"(?:^|\s)(\d{1,4})(?:s|sec|secs)\s*$", re.I)
+
+
+def mask_phone(phone: str) -> str:
+    """+919876543210 -> +91••••••3210: enough to tell accounts apart without showing the number."""
+    digits = re.sub(r"\D", "", phone or "")
+    if not digits:
+        return ""
+    if len(digits) < 8:
+        return "•" * (len(digits) - 2) + digits[-2:]
+    return f"+{digits[:2]}{'•' * (len(digits) - 6)}{digits[-4:]}"
+
+
+def parse_target(text: str) -> str:
+    """@username, numeric chat id or +phone. Returns it normalised."""
+    value = (text or "").strip()
+    if _USERNAME.match(value):
+        return "@" + value.lstrip("@")
+    if _CHAT_ID.match(value) or _PHONE.match(value):
+        return value
+    raise ValueError("Send a @username (5-32 letters, digits or _), a chat id, or a +phone number.")
+
+
+def parse_int(text: str, label: str) -> int:
+    value = (text or "").strip()
+    if not value.isdigit() or int(value) <= 0:
+        raise ValueError(f"{label} must be a positive number.")
+    return int(value)
+
+
+def parse_delay(text: str, minimum: int = BULK_DELAY_MIN, maximum: int = BULK_DELAY_MAX) -> int:
+    match = re.fullmatch(r"\s*(\d{1,4})\s*(?:s|sec|secs|seconds?)?\s*", text or "", re.I)
+    if not match:
+        raise ValueError("Send the delay as a whole number of seconds, for example 3.")
+    value = int(match.group(1))
+    if not minimum <= value <= maximum:
+        raise ValueError(f"Delay must be between {minimum} and {maximum} seconds.")
+    return value
+
+
+def parse_time(text: str) -> dtime:
+    cleaned = (text or "").strip().replace(" ", "").upper()
+    for fmt in ("%I:%M%p", "%I%p", "%H:%M"):
+        try:
+            return datetime.strptime(cleaned, fmt).time()
+        except ValueError:
+            continue
+    raise ValueError("Use a time like 10:30am or 22:15.")
+
+
+def parse_count(text: str, maximum: int = MAX_TIMES_PER_DAY) -> int:
+    value = (text or "").strip()
+    if not value.isdigit() or not 1 <= int(value) <= maximum:
+        raise ValueError(f"Send a number between 1 and {maximum}.")
+    return int(value)
+
+
+@dataclass
+class BulkArgs:
+    target: str | None = None
+    text: str | None = None
+    delay: int | None = None
+    confirmed: bool | None = None
+
+
+def parse_bulk_args(kind: str, raw: str) -> BulkArgs:
+    """Parse what follows /all, /alll or /allblock.
+
+    Shapes:  <target> [message] [3sec] [Y|N]     (block has no message)
+    A trailing Y/N answers the confirmation; a trailing "3sec" is the delay
+    between accounts. Both are optional and missing pieces are asked step by step.
+    """
+    rest = (raw or "").strip()
+    args = BulkArgs()
+    if not rest:
+        return args
+    parts = rest.split(None, 1)
+    args.target = parse_target(parts[0])
+    remainder = parts[1] if len(parts) > 1 else ""
+    while True:
+        confirm = _TAIL_CONFIRM.search(remainder) if args.confirmed is None else None
+        if confirm:
+            args.confirmed = confirm.group(1).lower().startswith("y")
+            remainder = remainder[: confirm.start()]
+            continue
+        delay = _TAIL_DELAY.search(remainder) if args.delay is None else None
+        if delay:
+            args.delay = int(delay.group(1))
+            remainder = remainder[: delay.start()]
+            continue
+        break
+    message = remainder.strip()
+    if kind == "block":
+        if message:
+            raise ValueError("/allblock only takes a user, an optional delay like 3sec, and Y/N.")
+    elif message:
+        args.text = message
+    return args
+
