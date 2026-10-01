@@ -1,0 +1,45 @@
+"""Numbers and limits shared across the app, in one place."""
+
+# --- bulk sends: /all, /alll, /allblock --------------------------------------
+BULK_DELAY_MIN = 0
+BULK_DELAY_MAX = 100
+OPEN_CHAT_MIN_DELAY = 3  # /alll and the daily broadcast open new chats, so keep accounts this far apart
+DELAY_PRESETS = (0, 1, 3, 5, 10, 30)
+OPEN_CHAT_DELAY_PRESETS = (3, 5, 10, 30, 60)
+
+# --- daily broadcast ----------------------------------------------------------
+MAX_TIMES_PER_DAY = 1440
+COUNT_PRESETS = (1, 2, 3, 4, 6, 12)
+TIME_PRESETS = ("09:00", "12:00", "18:00", "21:00")
+
+# --- bot UI ---------------------------------------------------------------------
+PAGE_SIZE = 8  # buttons per page in long lists (chats, accounts)
+DIALOG_FETCH_LIMIT = 100
+WIZARD_TTL = 900  # seconds a half-finished step-by-step flow stays alive
+DENY_REPLY_INTERVAL = 30  # a stranger gets the "admins only" reply at most this often
+
+# --- Telegram limits ------------------------------------------------------------
+MAX_BOT_UPLOAD_BYTES = 49 * 1024 * 1024  # Bot API upload limit is 50 MB
+CAPTION_LIMIT = 1024
+MESSAGE_LIMIT = 4096
+
+# --- connection tuning ----------------------------------------------------------
+CONNECT_TIMEOUT = 45  # seconds to wait for a (re)connect before giving up on that attempt
+REQUEST_TIMEOUT = 60  # seconds to wait for a single Telegram request during login/registration
+WATCHDOG_INTERVAL = 60  # seconds between connection health checks
+LIVENESS_EVERY_TICKS = 5  # every Nth watchdog tick also makes a real request to prove the session is alive
+DIALOG_CACHE_TTL = 120  # seconds an account's chat list is reused before it is read again
+DIALOG_CACHE_MIN_REFRESH = 20  # a missing chat forces a re-read, but not more often than this
+DOWNLOAD_TIMEOUT = 300  # seconds allowed for downloading one incoming media file
+UPLOAD_READ_TIMEOUT = 60
+UPLOAD_WRITE_TIMEOUT = 180
+
+# --- instance lease (two copies must never use the same sessions) ----------------
+LEASE_INTERVAL = 10
+LEASE_STALE_SECONDS = 35
+TAKEOVER_WAIT = 25
+
+# --- web server -------------------------------------------------------------------
+LOGIN_KEY_TTL = 600  # a /logs login link works once, for this many seconds
+SESSION_TTL = 12 * 3600  # browser session after using the link
+SELF_PING_MIN_INTERVAL = 30
