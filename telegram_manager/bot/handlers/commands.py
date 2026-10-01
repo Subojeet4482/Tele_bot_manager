@@ -1,0 +1,124 @@
+"""/all, /alll, /allblock and /message: from a command (all at once) or step by step."""
+from __future__ import annotations
+
+import re
+
+from telegram_manager.bot import keyboards, ui
+from telegram_manager.bot.flows.bulk import KINDS
+from telegram_manager.bot.handlers.base import HandlerBase
+from telegram_manager.constants import BULK_DELAY_MAX
+from telegram_manager.errors import describe_error
+from telegram_manager.parsing import parse_bulk_args, parse_target
+
+_USAGE = {
+    "all": "/all @user your message 3sec Y",
+    "alll": "/alll @user your message 5sec Y",
+    "block": "/allblock @user 3sec Y",
+}
+
+
+class CommandHandlers(HandlerBase):
+    # --- bulk ---------------------------------------------------------------------------
+    async def bulk_button(self, update, context) -> None:
+        """Menu button bulk|<kind>."""
+        if not await self.entry(update):
+            return
+        kind = self.arg(update)
+        if kind not in KINDS or await self.accounts_or_notice(update) is None:
+            return
+        await self.engine.start(update, context, f"bulk_{kind}")
+
+    async def bulk_command(self, update, context, kind: str) -> None:
+        if not await self.guard.allow(update):
+            return
+        if await self.accounts_or_notice(update) is None:
+            return
+        try:
+            args = parse_bulk_args(kind, self.command_args(update))
+        except ValueError as exc:
+            await ui.show(update, f"❌ {exc}\n\nExample: {_USAGE[kind]}", keyboards.back("menu", "⚙️ Menu"))
+            return
+        minimum = KINDS[kind][2]
+        if args.delay is not None and not minimum <= args.delay <= BULK_DELAY_MAX:
+            await ui.show(
+                update,
+                f"❌ The delay must be between {minimum} and {BULK_DELAY_MAX} seconds.",
+                keyboards.back("menu", "⚙️ Menu"),
+            )
+            return
+        if args.confirmed is False:
+            await ui.show(update, "❌ Cancelled.", keyboards.back("menu", "⚙️ Menu"))
+            return
+        answers: dict = {}
+        if args.target:
+            answers["target"] = args.target
+        if args.text:
+            answers["text"] = args.text
+        if args.delay is not None:
+            answers["delay"] = args.delay
+        if args.confirmed:
+            answers["confirmed"] = True
+        await self.engine.start(update, context, f"bulk_{kind}", answers)
+
+    async def stop_bulk(self, update, context) -> None:
+        if not await self.guard.allow(update):
+            return
+        stopped = self.deps.bulk.cancel(self.uid(update))
+        await update.callback_query.answer("Stopping…" if stopped else "Nothing is running.")
+
+    # --- one account --------------------------------------------------------------------
+    async def message_button(self, update, context) -> None:
+        """Menu button msg|start."""
+        if not await self.entry(update):
+            return
+        if await self.accounts_or_notice(update) is None:
+            return
+        await self.engine.start(update, context, "message")
+
+    async def message_for_account(self, update, context) -> None:
+        """Account screen button msg_acc|<id>."""
+        if not await self.entry(update):
+            return
+        account = await self.own_account(update, self.arg(update))
+        if account is not None:
+            await self.engine.start(update, context, "message", {"account": str(account["id"])})
+
+    async def message_command(self, update, context) -> None:
+        """/message                → pick account, chat, text
+        /message 1                → pick chat, text
+        /message 1 @user          → text
+        /message 1 @user hello    → sends now"""
+        if not await self.guard.allow(update):
+            return
+        raw = self.command_args(update).strip()
+        if not raw:
+            if await self.accounts_or_notice(update) is not None:
+                await self.engine.start(update, context, "message")
+            return
+        match = re.match(r"^(\S+)(?:\s+(\S+))?(?:\s+(.+))?$", raw, re.S)
+        account = await self.store.accounts.find_by_alias(self.uid(update), match.group(1))
+        if account is None:
+            await ui.show(
+                update, "❌ Account not found. Use /list to see your accounts.", keyboards.back("menu", "⚙️ Menu")
+            )
+            return
+        answers = {"account": str(account["id"])}
+        if match.group(2):
+            try:
+                answers["chat"] = parse_target(match.group(2))
+            except ValueError as exc:
+                await ui.show(update, f"❌ {exc}", keyboards.back("menu", "⚙️ Menu"))
+                return
+        if match.group(3):
+            answers["text"] = match.group(3).strip()
+        if "text" in answers:  # everything given: send right away
+            try:
+                await self.manager.send_to_existing_dialog(
+                    answers["account"], answers["chat"], answers["text"], self.uid(update)
+                )
+            except Exception as exc:
+                await ui.show(update, f"❌ Could not send: {describe_error(exc)}", keyboards.back("menu", "⚙️ Menu"))
+                return
+            await ui.show(update, "✅ Message sent.", keyboards.after_action("💬 Send another", "msg|start"))
+            return
+        await self.engine.start(update, context, "message", answers)
