@@ -4,7 +4,7 @@ from __future__ import annotations
 import logging
 
 from telegram_manager.bot.handlers.base import HandlerBase
-from telegram_manager.errors import describe_error
+from telegram_manager.errors import describe_error, explain_send_error
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +27,7 @@ class TextHandlers(HandlerBase):
                 )
             except Exception as exc:
                 logger.warning("Reply was not sent: %s", describe_error(exc))
-                await message.reply_text(f"❌ Reply was not sent: {describe_error(exc)}")
+                await message.reply_text(f"❌ Reply was not sent: {explain_send_error(exc)}")
                 return
             if handled:
                 await message.reply_text("✅ Reply sent to that chat.")
