@@ -124,6 +124,10 @@ class FakeBot:
         self.sent.append((chat_id, text))
         return SimpleNamespace(message_id=next(_ids))
 
+    async def send_sticker(self, chat_id, sticker, **kwargs):
+        self.sent.append((chat_id, "<sticker>"))
+        return SimpleNamespace(message_id=next(_ids))
+
     async def get_chat(self, user_id):
         return SimpleNamespace(full_name=f"Name {user_id}", username=None)
 
