@@ -1,0 +1,19 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Any
+
+
+@dataclass
+class Deps:
+    """Everything the bot handlers need, passed around as one object."""
+
+    settings: Any
+    store: Any
+    manager: Any
+    access: Any  # telegram_manager.access.AccessControl
+    guard: Any  # telegram_manager.bot.guard.Guard
+    bulk: Any  # telegram_manager.bot.bulk_runner.BulkRunner
+    log_buffer: Any = None
+    log_access: Any = None
+    health: Any = None
