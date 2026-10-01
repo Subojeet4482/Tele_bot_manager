@@ -7,7 +7,7 @@ from telegram_manager.bot.handlers.base import HandlerBase
 SWITCHES = {
     "u": ("👤 User messages", "forward_user_messages"),
     "b": ("🤖 Bot messages", "forward_bot_messages"),
-    "c": ("📢 Channel messages", "forward_channel_messages"),
+    "c": ("📢 Channel & group messages", "forward_channel_messages"),
 }
 _VALUES = {"on": True, "off": False, "global": None, "default": None, "reset": None}
 
