@@ -1,23 +1,64 @@
-# Telegram Account Manager Bot
+<div align="center">
 
-A Telegram bot for connecting several Telegram user accounts, keeping their Telethon sessions encrypted in
-Firebase Firestore, forwarding incoming messages to you, and sending messages from all of your accounts.
+# 📱 Telegram Account Manager Bot
 
-**Multi-admin:** the first ID (`OWNER_ID`) is the **owner**. The owner can add and remove other **admins**.
-Every admin connects their *own* accounts and only ever sees and controls those. Anyone else who opens the bot is
-told it is only for its admin.
+**Connect many Telegram accounts. Get their messages in one place. Send from all of them with one command.**
 
-## Safety and Telegram rules
+[**Open the bot → @telethon_manager_bot**](https://t.me/telethon_manager_bot)
 
-- Use this only for accounts you own or are explicitly allowed to manage. Follow Telegram's Terms of Service,
-  rate limits and anti-spam rules. `/alll` and the daily broadcast open new chats: they always keep at least 3 seconds
-  between accounts.
-- OTP codes, 2-step passwords, API hashes and session strings are deleted from the chat right after they are read.
-  OTPs and passwords are never stored. API hashes and sessions are encrypted before they go to Firestore.
+`Python 3.11+` · `Telethon` · `python-telegram-bot` · `Firebase Firestore` · `119 tests passing`
+
+</div>
+
+---
+
+## Contents
+
+[Features](#-features) · [Quick start](#-quick-start) · [Using the bot](#-using-the-bot) · [Connecting an account](#-connecting-an-account) · [Forwarding](#-what-gets-forwarded) · [Bulk actions](#-bulk-actions) · [Admins](#-owner-and-admins) · [Configuration](#-configuration) · [Data](#-where-data-is-stored) · [Logs & health](#-live-logs-and-health) · [Deploy](#-deployment) · [Tests](#-tests) · [Layout](#-project-layout)
+
+---
+
+## ✨ Features
+
+- **Many accounts, one bot.** Log in with a phone number (+ 2-step password) or a Telethon session string.
+- **Forwarding inbox.** Incoming messages from your accounts arrive in the bot, sorted into **user / bot / channel**, each with its own on/off switch. Reply or react to a forwarded message and it is sent back through the right account.
+- **Bulk actions.** Message or block one user from all your accounts, with a delay between accounts.
+- **Daily broadcast.** Schedule a message to go out from all accounts at set times.
+- **Multi-admin.** The owner adds admins; every admin sees and controls only their own accounts.
+- **Safe by design.** Sessions and API hashes are encrypted, secrets typed in chat are deleted, logs hold no message text.
+- **Self-healing.** Connection watchdog, auto-reconnect, and an instance lease so two copies never fight over one session.
+
+## ⚠️ Safety and Telegram rules
+
+- Use this only for accounts you own or are explicitly allowed to manage. Follow Telegram's Terms of Service, rate limits and anti-spam rules.
+- `/alll` and the daily broadcast open new chats, so they always keep **at least 3 seconds** between accounts.
+- OTP codes, 2-step passwords, API hashes and session strings are **deleted from the chat right after they are read**. OTPs and passwords are never stored; API hashes and sessions are encrypted before going to Firestore.
 - Keep `SESSION_ENCRYPTION_KEY` private and backed up.
 - Logs never contain message texts, secrets or raw chat/sender/user ids (ids appear as short masked tags like `#a1b2c3`).
 
-## How the bot works
+---
+
+## 🚀 Quick start
+
+**You need:** Python 3.11+, a bot token from [@BotFather](https://t.me/BotFather), an API ID/hash from [my.telegram.org](https://my.telegram.org), and a Firebase project with Firestore.
+
+```bash
+python -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+cp .env.example .env
+
+# Fill the two generated values into .env:
+python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"   # → SESSION_ENCRYPTION_KEY
+base64 -w 0 firebase-service-account.json                                                    # → FIREBASE_CREDENTIALS_B64
+
+python app.py
+```
+
+Set `OWNER_ID` to your numeric Telegram ID (ask [@userinfobot](https://t.me/userinfobot)) and `BOT_TOKEN` to your bot's token. Open your bot and send `/start`.
+
+---
+
+## 🤖 Using the bot
 
 `/start` shows **Connect account · Logout account · My accounts · (owner: Manage admins) · Menu**.
 `/menu` shows every action as a button. Every step-by-step screen has **⬅️ Back** and **❌ Cancel**.
@@ -33,24 +74,62 @@ told it is only for its admin.
 | `/logs` | (owner) one-time link to the live logs |
 | `/cancel` | Cancel the current step / stop a running bulk action |
 
-The daily broadcast (old `/onalltime`) and the delay setting (old `/delay`) are no longer commands: the daily
-broadcast is a menu button that asks one question at a time, and the delay is asked every time you run a bulk action.
+> The daily broadcast (old `/onalltime`) and the delay setting (old `/delay`) are no longer commands. The daily broadcast is a menu button that asks one question at a time, and the delay is asked every time you run a bulk action.
+
+---
+
+## 🔗 Connecting an account
+
+**Connect account → phone number** asks for API ID, API hash, phone number, login code and, if the account has it, the 2-step password.
+
+- **Number formats:** `+919876543210`, `919876543210` and `00919876543210` all work. Spaces, dashes and brackets are ignored. A number without a country code is refused (the bot will not guess the country).
+- **Login code:** send it **with spaces between the digits** (`1 2 3 4 5`). Telegram cancels codes that are sent as plain text.
+- **Session string:** *Connect account → session string* logs in with an existing Telethon session instead.
+- **Masked phone:** each account shows a masked number (`+91••••••3210`) in **My accounts** and on its detail screen.
+
+**Addressing an account in commands** (e.g. `/message`, `/usermessage`): use its number, name, `@username`, the masked phone, or the last 4+ digits of its phone number (only when that matches exactly one of your accounts).
+
+---
+
+## 📥 What gets forwarded
+
+Incoming messages are sorted into three kinds. Each has its own switch: global in **Menu → Forwarding**, or per account (default → ON → OFF → default).
+
+| Kind | What counts |
+|---|---|
+| **User** | A real person, in a private chat or in a group |
+| **Bot** | A Telegram bot, in any chat |
+| **Channel** | Broadcast channel posts, and messages posted in a group *as* a channel (linked-channel posts, anonymous admins) |
+
+Every forwarded message starts with a header:
+
+```
+📱 Account 3 — Nothing 1
+💭 Chat: Study Group          ← groups and channels only
+👤 From: Ansh (@Ansh7653)
+↩️ Replying to: "…"
+```
+
+Reply to a forwarded message (or react to it) and the bot sends it back through the same account, as a quoted reply.
+
+---
+
+## 📤 Bulk actions
 
 ### `/all`, `/alll`, `/allblock` step by step
 
 ```
 You: /all
-Bot: Enter the user name          →  @mandal4482
+Bot: Enter the user name                  →  @mandal4482
 Bot: Confirm the user  [✅ Confirm] [⬅️ Back] [❌ Cancel]
-Bot: Delay between accounts (0–100 sec)   0 = instant, or 1 / 3 / 5 / 10 / 30 … or type a number
-Bot: Send the message text        →  hello
-Bot: Working on 5 account(s) …    →  result: "✅ Message sent: 5/5 accounts"
+Bot: Delay between accounts (0–100 sec)   →  0 = instant, or 1 / 3 / 5 / 10 / 30 … or type a number
+Bot: Send the message text                →  hello
+Bot: Working on 5 account(s) …            →  "✅ Message sent: 5/5 accounts"
 ```
 
-- **Delay 0 = instant:** all accounts act at the same moment. **Delay N:** one account acts, the bot waits N seconds,
-  then the next account acts.
+- **Delay 0:** all accounts act at the same moment. **Delay N:** one account acts, the bot waits N seconds, then the next.
 - `/alll` accepts 3–100 seconds only. `/allblock` has the same steps as `/all` but no message question.
-- Offline accounts are reported and skipped without waiting. A **🛑 Stop** button (or `/cancel`) stops a running job.
+- Offline accounts are reported and skipped without waiting. **🛑 Stop** (or `/cancel`) stops a running job.
 
 ### One-line forms
 
@@ -63,71 +142,97 @@ Bot: Working on 5 account(s) …    →  result: "✅ Message sent: 5/5 accounts
 /message 1 @mandal4482 hello      sends right away from your account 1
 ```
 
-A trailing `Y`/`N` and a trailing `3sec` are read as options, so a message that really ends in "Y" or "5s" should
-go through the step-by-step flow.
+A trailing `Y`/`N` and a trailing `3sec` are read as options, so a message that really ends in "Y" or "5s" should go through the step-by-step flow.
 
-### Owner and admins
+---
 
-- The owner (`OWNER_ID`) opens **👑 Manage admins** from `/start`: add an admin by Telegram user ID, or remove one.
+## 👑 Owner and admins
+
+- The owner (`OWNER_ID`) opens **Manage admins** from `/start` to add an admin by Telegram user ID, or remove one.
 - Removing an admin logs out and deletes **their** accounts and stops their daily broadcast.
-- Account numbers (`1, 2, 3…`) are per admin. Forwarded messages, replies, reactions, bulk actions, notifications and
-  the daily broadcast always stay inside the admin who owns the account.
+- Account numbers (`1, 2, 3…`) are per admin. Forwarded messages, replies, reactions, bulk actions, notifications and the daily broadcast always stay inside the admin who owns the account.
 - Only the owner can open the logs.
+- Anyone else who opens the bot is told it is only for its admin.
 
-## Live logs, without a secret in the URL
+---
 
-`/logs` (owner only) sends a **one-time link** that expires after 10 minutes. Opening it shows a page with an
-**Open logs** button; pressing it starts a 12-hour browser session (HttpOnly, SameSite=Strict cookie) and the address
-becomes plain `/logs`. So the browser history and referrers never contain a secret, and a link preview or scanner
-cannot use the link up. `/logs/logout` ends the session. `/status` (JSON) needs the same session.
+## ⚙️ Configuration
 
-## Health for UptimeRobot
+| Name | Required | Meaning |
+|---|:---:|---|
+| `BOT_TOKEN` | ✅ | Token from @BotFather (`123456:ABC...`) |
+| `OWNER_ID` | ✅ | Numeric Telegram ID of the owner (`ADMIN_ID` also works) |
+| `FIREBASE_CREDENTIALS_B64` | ✅ | Firebase service-account JSON as one base64 line |
+| `SESSION_ENCRYPTION_KEY` | ✅ | Fernet key: exactly 44 characters, ends with `=`, **value only** (no `NAME=`, quotes or spaces) |
+| `FIREBASE_DATABASE_ID` | | Firestore database name (blank = default) |
+| `TIMEZONE` | | IANA name for the daily broadcast, default `UTC` (e.g. `Asia/Kolkata`) |
+| `LOG_LEVEL` | | Default `INFO` |
+| `PORT` | | Default `8080` (Render sets it) |
+| `SELF_PING_URL`, `SELF_PING_INTERVAL` | | Keep-awake ping. Interval `0` = off, otherwise at least 30 (default 600) |
+| `PUBLIC_URL` | | Address used for the one-time `/logs` link (auto-detected on Render) |
+| `INSTANCE_LEASE` | | `on` (default) stops two copies using the same sessions. Keep it on. |
 
-| URL | Answer |
-|---|---|
-| `/` and `/health` | Real health: `200 ok` / `200 degraded` (some accounts offline) / `503 down` (bot not answering Telegram, watchdog stalled, or every saved account offline). A new start gets 3 minutes of grace. A standby copy (see the instance lease) reports ok. |
-| `/live` | Always `200` while the process runs (use this for a platform check that should not restart you when Telegram is down) |
+**Troubleshooting — `SESSION_ENCRYPTION_KEY is not a valid Fernet key`:** the value is incomplete or has extra text around it. Generate a fresh key with the command in [Quick start](#-quick-start), or re-paste the existing one in full. **Never replace the key of a running setup:** saved sessions can only be read with the key that encrypted them.
 
-Health uses a bot heartbeat (`get_me` every minute) and the connection watchdog. The response contains only a
-status and a reason code, never account names. Other paths return 404.
+---
 
-## Setup
+## 🗄️ Where data is stored
 
-Requirements: Python 3.11+, a bot token from [@BotFather](https://t.me/BotFather), API ID/hash from
-[my.telegram.org](https://my.telegram.org), a Firebase project with Firestore.
-
-```bash
-python -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
-cp .env.example .env
-python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"   # → SESSION_ENCRYPTION_KEY
-base64 -w 0 firebase-service-account.json                                                    # → FIREBASE_CREDENTIALS_B64
-```
-
-Set `OWNER_ID` to your numeric Telegram ID (ask [@userinfobot](https://t.me/userinfobot)). `TIMEZONE` (IANA name,
-default `UTC`) is used by the daily broadcast. Then `python app.py`.
+| Firestore collection | Document | Holds |
+|---|---|---|
+| `telegram_accounts` | auto id | Encrypted session and API hash, phone, `phone_masked`, forwarding overrides, owner, number |
+| `telegram_admins` | admin's Telegram ID | Who added them, when, name |
+| `telegram_admin_settings` | admin's Telegram ID | Global forwarding switches and the account counter |
+| `telegram_daily_jobs` | admin's Telegram ID | Daily broadcast: `target`, `text`, `delay_seconds`, `start_time`, `times_per_day` |
+| `telegram_reply_map` | `chatId_messageId` | Which forwarded message belongs to which original (for replies and reactions) |
+| `telegram_settings` | `instance_lease` | The lock that keeps one copy running |
 
 Optional: add a Firestore TTL policy on the `expires_at` field of `telegram_reply_map` to auto-delete old entries.
 
-## Upgrading from the single-admin version
+**Upgrading from the single-admin version:** nothing to migrate by hand. On first start your existing accounts become the owner's, the old global forwarding switches and account counter move to per-admin settings, and the old daily job becomes the owner's daily broadcast. `ADMIN_ID` still works as `OWNER_ID`. `LOGS_TOKEN` and `/logs?token=` URLs are gone (use `/logs`), and the global `/delay` setting is no longer used.
 
-Nothing to migrate by hand. On first start: your existing accounts become the owner's, the owner's old global
-forwarding switches and account counter move to the new per-admin settings, and the old daily job becomes the owner's
-daily broadcast. `ADMIN_ID` still works as `OWNER_ID`. `LOGS_TOKEN` and the `/logs?token=` URLs are gone (old links
-stop working; use `/logs`). The global `/delay` setting is no longer used.
+---
 
-## Tests
+## 📊 Live logs and health
+
+### Logs without a secret in the URL
+
+`/logs` (owner only) sends a **one-time link** that expires after 10 minutes. Opening it shows an **Open logs** button; pressing it starts a 12-hour browser session (HttpOnly, SameSite=Strict cookie) and the address becomes plain `/logs`. Browser history and referrers never contain a secret, and a link preview or scanner cannot use the link up. `/logs/logout` ends the session. `/status` (JSON) needs the same session.
+
+### Health for UptimeRobot
+
+| URL | Answer |
+|---|---|
+| `/` and `/health` | `200 ok` · `200 degraded` (some accounts offline) · `503 down` (bot not answering Telegram, watchdog stalled, or every saved account offline). A new start gets 3 minutes of grace. A standby copy reports ok. |
+| `/live` | Always `200` while the process runs. Use it for a platform check that should not restart you when Telegram is down. |
+
+Health uses a bot heartbeat (`get_me` every minute) and the connection watchdog. The response contains only a status and a reason code, never account names. Other paths return 404.
+
+---
+
+## ☁️ Deployment
+
+- Use `/health` for UptimeRobot and `/live` for a platform liveness check.
+- Self-ping (`SELF_PING_INTERVAL`, default 600 s, `0` = off) keeps a sleeping host awake.
+- Firestore stores encrypted sessions, so the **same `SESSION_ENCRYPTION_KEY` must be present after every restart**.
+- On a redeploy, the new copy waits about 25 s for the old one to disconnect (instance lease), which protects sessions from `AuthKeyDuplicatedError`.
+- Never commit `.env`, Firebase JSON files, the `key` file or session strings.
+
+---
+
+## ✅ Tests
 
 ```bash
 python -m unittest discover -s tests -v
 ```
 
-116 tests cover parsing, config, the web server (health states, one-time login, cookies), Firestore isolation between
-admins, every wizard (bulk, message, connect with 2-step password and Back, daily broadcast, admin add/remove),
-access control, per-admin forwarding and bulk timing. Without the Telegram/Telethon libraries installed, the tests use
-tiny stand-ins (`tests/stubs.py`); with them installed nothing is replaced.
+**119 tests, all passing.** They cover parsing, phone masking and lookup, config, the web server (health states, one-time login, cookies), Firestore isolation between admins, every wizard (bulk, message, connect with 2-step password and Back, daily broadcast, admin add/remove), access control, per-admin forwarding, user/bot/channel detection and bulk timing.
 
-## Project layout (one file per job)
+Without the Telegram/Telethon libraries installed, the tests use tiny stand-ins (`tests/stubs.py`); with them installed nothing is replaced.
+
+---
+
+## 🗂️ Project layout
 
 ```text
 app.py                          entry point
@@ -144,9 +249,3 @@ telegram_manager/
     handlers/ start accounts forwarding commands schedule admins logs text
 tests/
 ```
-
-## Deployment notes
-
-Use `/health` for UptimeRobot and `/live` for a platform liveness check. Self-ping (`SELF_PING_INTERVAL`, default 600 s,
-`0` = off) keeps a sleeping host awake. Firestore stores encrypted sessions, so the same `SESSION_ENCRYPTION_KEY` must be
-present after restarts. Never commit `.env`, Firebase JSON files or session strings.
