@@ -1,0 +1,75 @@
+"""/all, /alll and /allblock: user -> confirm -> delay between accounts -> message -> run."""
+from __future__ import annotations
+
+from telegram_manager.bot.flows.common import (
+    confirm_step,
+    delay_text,
+    delay_step,
+    preview,
+    target_step,
+    text_step,
+)
+from telegram_manager.bot.wizard.spec import WizardContext, WizardSpec
+from telegram_manager.constants import (
+    BULK_DELAY_MAX,
+    BULK_DELAY_MIN,
+    DELAY_PRESETS,
+    OPEN_CHAT_DELAY_PRESETS,
+    OPEN_CHAT_MIN_DELAY,
+)
+
+# kind -> (title, needs a message, minimum delay, presets)
+KINDS = {
+    "all": ("📨 Message all accounts", True, BULK_DELAY_MIN, DELAY_PRESETS),
+    "alll": ("📤 Message all (opens chat)", True, OPEN_CHAT_MIN_DELAY, OPEN_CHAT_DELAY_PRESETS),
+    "block": ("🚫 Block on all accounts", False, BULK_DELAY_MIN, DELAY_PRESETS),
+}
+
+_NORMAL_INTRO = (
+    f"⏱ Delay between accounts ({BULK_DELAY_MIN}–{BULK_DELAY_MAX} sec)\n\n"
+    "⚡ 0 = instant: every account acts at the same time.\n"
+    "Any other number: one account acts, the bot waits that many seconds, then the next account acts.\n\n"
+    "Tap a value or type a number."
+)
+_OPEN_INTRO = (
+    f"⏱ Delay between accounts ({OPEN_CHAT_MIN_DELAY}–{BULK_DELAY_MAX} sec)\n\n"
+    "This opens new chats, so accounts go one after another with at least "
+    f"{OPEN_CHAT_MIN_DELAY} seconds in between: one account sends, the bot waits, then the next one sends.\n\n"
+    "Tap a value or type a number."
+)
+
+
+def build_bulk_specs(deps) -> list[WizardSpec]:
+    return [_build(deps, kind) for kind in KINDS]
+
+
+def _build(deps, kind: str) -> WizardSpec:
+    title, needs_text, minimum, presets = KINDS[kind]
+
+    async def describe(wc: WizardContext) -> str:
+        answers = wc.answers
+        lines = ["🔎 Confirm the user", f"👤 {answers['target']}"]
+        if answers.get("text"):
+            lines.append(f"✉️ {preview(answers['text'])}")
+        if "delay" in answers:
+            lines.append(f"⏱ {delay_text(answers['delay'])}")
+        lines.append("\nTap ✅ Confirm to continue.")
+        return "\n".join(lines)
+
+    ask = "Enter the user name to block (like @mandal4482)." if kind == "block" else \
+        "Enter the user name to message (like @mandal4482)."
+    steps = [
+        target_step(ask),
+        confirm_step("confirmed", describe),
+        delay_step(minimum, presets, _OPEN_INTRO if kind == "alll" else _NORMAL_INTRO),
+    ]
+    if needs_text:
+        steps.append(text_step("✉️ Send the message text."))
+
+    async def finish(wc: WizardContext) -> None:
+        answers = wc.answers
+        await deps.bulk.launch(
+            wc.update, wc.context, wc.user_id, kind, answers["target"], answers.get("text"), answers["delay"]
+        )
+
+    return WizardSpec(name=f"bulk_{kind}", title=title, steps=steps, finish=finish, back_to="menu")
