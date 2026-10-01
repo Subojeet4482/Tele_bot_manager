@@ -6,7 +6,7 @@
 
 [**Open the bot → @telethon_manager_bot**](https://t.me/telethon_manager_bot)
 
-`Python 3.11+` · `Telethon` · `python-telegram-bot` · `Firebase Firestore` · `119 tests passing`
+`Python 3.11+` · `Telethon` · `python-telegram-bot` · `Firebase Firestore` · `122 tests passing`
 
 </div>
 
@@ -21,7 +21,7 @@
 ## ✨ Features
 
 - **Many accounts, one bot.** Log in with a phone number (+ 2-step password) or a Telethon session string.
-- **Forwarding inbox.** Incoming messages from your accounts arrive in the bot, sorted into **user / bot / channel**, each with its own on/off switch. Reply or react to a forwarded message and it is sent back through the right account.
+- **Forwarding inbox.** Incoming messages from your accounts arrive in the bot, sorted into **user (DMs) / bot / channel (everything else)**, each with its own on/off switch. Reply or react to a forwarded message and it is sent back through the right account.
 - **Bulk actions.** Message or block one user from all your accounts, with a delay between accounts.
 - **Daily broadcast.** Schedule a message to go out from all accounts at set times.
 - **Multi-admin.** The owner adds admins; every admin sees and controls only their own accounts.
@@ -97,9 +97,11 @@ Incoming messages are sorted into three kinds. Each has its own switch: global i
 
 | Kind | What counts |
 |---|---|
-| **User** | A real person, in a private chat or in a group |
-| **Bot** | A Telegram bot, in any chat |
-| **Channel** | Broadcast channel posts, and messages posted in a group *as* a channel (linked-channel posts, anonymous admins) |
+| **Bot** | Any Telegram bot, in any chat: the sender has Telegram's bot flag, **or** its username ends in `bot` |
+| **User** | A real person writing to your account in a **private chat (DM)** |
+| **Channel** | **Everything else**: channel posts, messages in groups and supergroups, posts made in a group as a channel, anonymous admins, and senders that cannot be identified outside a DM |
+
+Bots are checked first, so a bot counts as a bot even inside a group. The switch is called **Channel & group messages** in the menu.
 
 Every forwarded message starts with a header:
 
@@ -226,7 +228,7 @@ Health uses a bot heartbeat (`get_me` every minute) and the connection watchdog.
 python -m unittest discover -s tests -v
 ```
 
-**119 tests, all passing.** They cover parsing, phone masking and lookup, config, the web server (health states, one-time login, cookies), Firestore isolation between admins, every wizard (bulk, message, connect with 2-step password and Back, daily broadcast, admin add/remove), access control, per-admin forwarding, user/bot/channel detection and bulk timing.
+**122 tests, all passing.** They cover parsing, phone masking and lookup, config, the web server (health states, one-time login, cookies), Firestore isolation between admins, every wizard (bulk, message, connect with 2-step password and Back, daily broadcast, admin add/remove), access control, per-admin forwarding, user/bot/channel detection and bulk timing.
 
 Without the Telegram/Telethon libraries installed, the tests use tiny stand-ins (`tests/stubs.py`); with them installed nothing is replaced.
 
