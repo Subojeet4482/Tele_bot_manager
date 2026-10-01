@@ -372,6 +372,7 @@ class ForwardingUiTests(unittest.IsolatedAsyncioTestCase):
         class Event:
             is_channel = False
             is_group = False
+            is_private = True
             chat_id = 5
             sender_id = 6
             message = SimpleNamespace(message="hey", media=None, forward=None, is_reply=False, id=1)
@@ -384,6 +385,88 @@ class ForwardingUiTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([chat for chat, _ in h.bot.sent], [BOB])
         self.assertIn("hey", h.bot.sent[0][1])
         self.assertIn("Bob A", h.bot.sent[0][1])
+
+    async def test_forward_header_names_the_group_but_not_private_chats(self):
+        h = self.h
+        await h.store.settings.set_forwarding(OWNER, "forward_user_messages", True)
+        await h.store.settings.set_forwarding(OWNER, "forward_channel_messages", True)  # group messages count as channel
+        from types import SimpleNamespace
+
+        def make_event(private):
+            class Event:
+                is_channel = False
+                is_group = not private
+                is_private = private
+                chat_id = 5
+                sender_id = 6
+                message = SimpleNamespace(message="hi", media=None, forward=None, is_reply=False, id=1)
+
+                async def get_sender(self):
+                    return SimpleNamespace(first_name="Ann", last_name=None, username=None, bot=False)
+
+                async def get_chat(self):
+                    return SimpleNamespace(title="Study Group", username=None)
+
+            return Event()
+
+        await h.manager._handle_incoming(self.acc["id"], make_event(private=False))
+        await h.manager._handle_incoming(self.acc["id"], make_event(private=True))
+        self.assertIn("💭 Chat: Study Group", h.bot.sent[0][1])
+        self.assertNotIn("Chat:", h.bot.sent[1][1])
+
+    async def test_sticker_is_forwarded_as_a_sticker_with_header_after_it(self):
+        import os
+        import tempfile
+
+        h = self.h
+        sent_texts = []
+
+        async def fake_forward(chat, path, header, body, remember, sticker=False):
+            from telegram_manager.core.forwarding import ForwardingMixin
+
+            return await ForwardingMixin._forward_with_media(h.manager, chat, path, header, body, remember, sticker)
+
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "sticker.webm")
+            open(path, "wb").write(b"x")
+            remembered = []
+            await fake_forward(5, path, "📱 Account 1 — A\n👤 From: Ann", "", remembered.append, sticker=True)
+        sent_texts = [text for _, text in h.bot.sent]
+        self.assertEqual(sent_texts, ["<sticker>", "📱 Account 1 — A\n👤 From: Ann"])
+        self.assertEqual(len(remembered), 2)  # replying to either one reaches the right account
+
+    async def test_sender_kinds_follow_the_three_rules(self):
+        from types import SimpleNamespace
+
+        h = self.h
+
+        def ev(sender, *, private=False, group=False, channel=False):
+            class Event:
+                is_channel = channel
+                is_group = group
+                is_private = private
+
+                async def get_sender(self):
+                    if sender == "ERR":
+                        raise RuntimeError
+                    return sender
+
+            return Event()
+
+        def person(username=None, bot=False):
+            return SimpleNamespace(first_name="P", last_name=None, username=username, bot=bot)
+
+        kind = h.manager._classify_sender
+        self.assertEqual(await kind(ev(person(), private=True)), "user")  # DM with a person
+        self.assertEqual(await kind(ev(person("rahul"), group=True)), "channel")  # person in a group
+        self.assertEqual(await kind(ev(person(bot=True), private=True)), "bot")  # Telegram bot flag
+        self.assertEqual(await kind(ev(person(bot=True), group=True)), "bot")  # bots count anywhere
+        self.assertEqual(await kind(ev(person("Weather_BOT"), private=True)), "bot")  # username ends in bot
+        self.assertEqual(await kind(ev(person("cannot_stop"), private=True)), "user")  # "bot" must be the ending
+        self.assertEqual(await kind(ev(SimpleNamespace(title="News"), group=True)), "channel")  # sent as a channel
+        self.assertEqual(await kind(ev(SimpleNamespace(title="News"), channel=True)), "channel")  # channel post
+        self.assertEqual(await kind(ev("ERR", private=True)), "user")  # unknown sender, DM
+        self.assertEqual(await kind(ev("ERR", group=True)), "channel")  # unknown sender elsewhere
 
 
 if __name__ == "__main__":
