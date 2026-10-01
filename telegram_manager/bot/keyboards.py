@@ -115,7 +115,7 @@ def forwarding_home(settings: dict[str, bool]) -> Markup:
     return _markup([
         [Btn(label("👤 User messages", settings["forward_user_messages"]), callback_data="fw|g|u")],
         [Btn(label("🤖 Bot messages", settings["forward_bot_messages"]), callback_data="fw|g|b")],
-        [Btn(label("📢 Channel messages", settings["forward_channel_messages"]), callback_data="fw|g|c")],
+        [Btn(label("📢 Channel & group messages", settings["forward_channel_messages"]), callback_data="fw|g|c")],
         [Btn("📱 Per-account settings", callback_data="fw|accs")],
         [Btn("⬅️ Back", callback_data="menu")],
     ])
