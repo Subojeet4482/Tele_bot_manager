@@ -98,3 +98,18 @@ class BulkArgsTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+class ExplainSendErrorTests(unittest.TestCase):
+    def test_discussion_group_error_gets_a_plain_hint(self):
+        from telegram_manager.errors import explain_send_error
+
+        class ChatGuestSendForbiddenError(Exception):
+            pass
+
+        text = explain_send_error(ChatGuestSendForbiddenError("You join the discussion group before commenting"))
+        self.assertIn("discussion group", text)
+        self.assertIn("join", text)
+        self.assertIn("(You join the discussion group before commenting)", text)
+        # An unknown error is shown as before, without a hint.
+        self.assertEqual(explain_send_error(ValueError("boom")), "boom")
