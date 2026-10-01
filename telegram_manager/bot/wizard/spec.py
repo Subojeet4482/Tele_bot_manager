@@ -1,0 +1,61 @@
+"""Declarative description of a step-by-step flow."""
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Any, Awaitable, Callable
+
+from telegram_manager.bot import ui
+
+
+@dataclass
+class Choice:
+    label: str
+    value: str  # goes into callback data: keep it short (max ~40 bytes)
+
+
+@dataclass
+class WizardContext:
+    update: Any
+    context: Any
+    spec: "WizardSpec"
+    state: Any  # WizardState
+    deps: Any
+
+    @property
+    def answers(self) -> dict[str, Any]:
+        return self.state.answers
+
+    @property
+    def user_id(self) -> int:
+        return self.update.effective_user.id
+
+    async def show(self, text: str, markup=None) -> None:
+        await ui.show(self.update, text, markup)
+
+
+class WizardAbort(Exception):
+    """Stop the flow and show this message (a dead end such as 'account already connected')."""
+
+
+@dataclass
+class Step:
+    key: str
+    prompt: Callable[[WizardContext], Awaitable[str]]
+    parse: Callable[[WizardContext, str], Awaitable[Any]]  # text or button value -> answer; raise ValueError to re-ask
+    choices: Callable[[WizardContext], Awaitable[list[Choice]]] | None = None
+    columns: int = 1
+    paged: bool = False
+    sensitive: bool = False  # the user's message is deleted right after it is read
+    skip: Callable[[WizardContext], bool] | None = None
+    back_key: str | None = None  # where Back goes, if not simply the previous step
+
+
+@dataclass
+class WizardSpec:
+    name: str  # short: it is part of callback data
+    title: str
+    steps: list[Step]
+    finish: Callable[[WizardContext], Awaitable[None]]
+    owner_only: bool = False
+    back_to: str = "menu"  # screen shown on Back from the first step and on Cancel
+    on_rewind: Callable[[WizardContext, str], Awaitable[None]] | None = None
