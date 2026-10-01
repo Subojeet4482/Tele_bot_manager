@@ -84,33 +84,43 @@ class ForwardingMixin:
         return enabled, f"{kind} message, {source} {'ON' if enabled else 'OFF'}"
 
     async def _classify_sender(self, event: events.NewMessage.Event) -> str:
-        """\"channel\", \"bot\" or \"user\".
+        """\"bot\", \"user\" or \"channel\" - three simple rules:
 
-        - Broadcast channel posts -> channel (groups/supergroups also report is_channel, so they
-          are excluded here and judged by who wrote the message).
-        - A message in a group written *as* a channel (linked-channel auto-posts, anonymous
-          admins) has a Channel/Chat entity as its sender -> channel, not user.
-        - Real users are split by the `bot` flag. If the sender cannot be loaded, the raw
-          from_id still tells channel from user."""
+        1. A bot is a bot anywhere: Telegram's `bot` flag is set, or the username ends in "bot".
+        2. A real person writing in a private chat (DM) is a user.
+        3. Everything else is a channel: channel posts, group and supergroup messages, messages
+           posted in a group as a channel, anonymous admins, or a sender that cannot be identified
+           outside a DM."""
         if event.is_channel and not event.is_group:
-            return "channel"
+            return "channel"  # broadcast channel posts are never bots or users
         try:
             sender = await event.get_sender()  # event.sender is often not loaded yet
         except Exception:
             sender = None
-        if sender is not None:
-            if not hasattr(sender, "first_name") and hasattr(sender, "title"):
-                return "channel"  # Channel / Chat entity: users always have first_name
-            return "bot" if getattr(sender, "bot", False) else "user"
-        from_id = getattr(getattr(event, "message", None), "from_id", None)
-        if type(from_id).__name__ in ("PeerChannel", "PeerChat"):
-            return "channel"
-        return "user"
+        is_dm = bool(getattr(event, "is_private", False))
+        if sender is None:
+            return "user" if is_dm else "channel"
+        if not hasattr(sender, "first_name") and hasattr(sender, "title"):
+            return "channel"  # Channel / Chat entity: real users always have first_name
+        if self._looks_like_bot(sender):
+            return "bot"
+        return "user" if is_dm else "channel"
+
+    @staticmethod
+    def _looks_like_bot(sender: Any) -> bool:
+        if getattr(sender, "bot", False):
+            return True
+        names = [getattr(sender, "username", None)]
+        names += [getattr(item, "username", None) for item in (getattr(sender, "usernames", None) or [])]
+        return any(isinstance(name, str) and name.lower().endswith("bot") for name in names)
 
     async def forward_event(self, account: dict[str, Any], event: events.NewMessage.Event) -> None:
         """Deliver to the admin who owns this account, and only to them."""
         chat = self._owner_of(account)
         lines = [f"📱 Account {account.get('number') or '?'} — {self.label_for_account(account)}"]
+        chat_line = await self._describe_chat(event)
+        if chat_line:
+            lines.append(f"💭 Chat: {chat_line}")
         sender_line = await self._describe_sender(event)
         if sender_line:
             lines.append(f"👤 From: {sender_line}")
@@ -140,7 +150,9 @@ class ForwardingMixin:
                     with tempfile.TemporaryDirectory(prefix="telegram-forward-") as temp_dir:
                         path = await asyncio.wait_for(message.download_media(file=temp_dir), DOWNLOAD_TIMEOUT)
                         if path:
-                            await self._forward_with_media(chat, path, header, body, remember)
+                            await self._forward_with_media(
+                                chat, path, header, body, remember, sticker=bool(getattr(message, "sticker", None))
+                            )
                             logger.info("Forwarded media from account %s", account["id"])
                             return
             except Exception:
@@ -153,12 +165,20 @@ class ForwardingMixin:
         logger.info("Forwarded text from account %s (%d chars)", account["id"], len(body))
 
     async def _forward_with_media(
-        self, chat: int, path: str, header: str, body: str, remember: Callable[[Any], None]
+        self,
+        chat: int,
+        path: str,
+        header: str,
+        body: str,
+        remember: Callable[[Any], None],
+        sticker: bool = False,
     ) -> None:
         """Send the media with as much of the text as fits in a caption.
 
         Once the media is out this never raises: the caller answers an exception by sending the
         whole message again as text, which would deliver it twice."""
+        if sticker and await self._forward_sticker(chat, path, header, remember):
+            return
         caption = f"{header}\n\n💬 {body}" if body else header
         if len(caption) <= CAPTION_LIMIT:
             remember(await self._send_media(chat, path, caption))
@@ -173,6 +193,34 @@ class ForwardingMixin:
                 await self.bot.send_message(
                     chat_id=chat, text="📎 [the media was forwarded, but the rest of the text could not be sent]"
                 )
+
+    async def _forward_sticker(self, chat: int, path: str, header: str, remember: Callable[[Any], None]) -> bool:
+        """Send a sticker as a real sticker (stickers cannot carry a caption, so the header follows
+        as a reply to it). False means Telegram refused it: the caller sends it as a file instead."""
+        timeouts = {"read_timeout": UPLOAD_READ_TIMEOUT, "write_timeout": UPLOAD_WRITE_TIMEOUT}
+        try:
+            with open(path, "rb") as media:
+                sent = await self.bot.send_sticker(chat_id=chat, sticker=media, **timeouts)
+        except BadRequest as exc:
+            logger.info("Bot API refused the sticker (%s); sending it as a document instead", describe_error(exc))
+            return False
+        remember(sent)
+        try:
+            remember(await self.bot.send_message(chat_id=chat, text=header, reply_to_message_id=sent.message_id))
+        except Exception:
+            logger.exception("The sticker was forwarded, but its header could not be sent")
+        return True
+
+    async def _describe_chat(self, event: events.NewMessage.Event) -> str:
+        """Name of the group/channel the message came from. Empty for private chats, where the
+        sender line already says everything."""
+        if getattr(event, "is_private", True):
+            return ""
+        try:
+            chat = await event.get_chat()
+        except Exception:
+            return ""
+        return self.label_for_entity(chat)
 
     async def _describe_sender(self, event: events.NewMessage.Event) -> str:
         try:
