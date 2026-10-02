@@ -22,6 +22,8 @@ from telegram_manager.bot.flows.admins import build_admin_specs
 from telegram_manager.bot.flows.bulk import build_bulk_specs
 from telegram_manager.bot.flows.connect import build_connect_specs
 from telegram_manager.bot.flows.message import build_message_spec
+from telegram_manager.bot.flows.multi import build_multi_spec
+from telegram_manager.bot.flows.profile import build_profile_specs
 from telegram_manager.bot.flows.schedule import build_schedule_spec
 from telegram_manager.bot.guard import Guard
 from telegram_manager.bot.handlers.accounts import AccountHandlers
@@ -74,6 +76,8 @@ def wire(deps: Deps) -> Components:
     engine.register(
         *build_bulk_specs(deps),
         build_message_spec(deps),
+        build_multi_spec(deps),
+        *build_profile_specs(deps),
         *build_connect_specs(deps),
         build_schedule_spec(deps),
         *build_admin_specs(deps),
@@ -95,6 +99,7 @@ def wire(deps: Deps) -> Components:
         "home": parts.start.home_screen,
         "menu": parts.start.menu_screen,
         "adm|home": parts.admins.home_screen,
+        "acc_list": parts.accounts.list_screen,
         "sched|home": parts.schedule.home_screen,
     }
     return parts
@@ -154,6 +159,7 @@ def build_application(settings, log_buffer=None, log_access=None, health=None) -
         ("alll", _bulk(commands, "alll")),
         ("allblock", _bulk(commands, "block")),
         ("message", commands.message_command),
+        ("multi", commands.multi_command),
         ("usermessage", _switch(forwarding, "u")),
         ("botmessage", _switch(forwarding, "b")),
         ("channelmessage", _switch(forwarding, "c")),
@@ -174,6 +180,7 @@ def build_application(settings, log_buffer=None, log_access=None, health=None) -
         (r"^lo\|", accounts.logout_select),
         (r"^loc\|", accounts.logout_confirm),
         (r"^acc\|", forwarding.account_screen),
+        (r"^pf\|", accounts.profile_button),
         (r"^fw\|home$", forwarding.home),
         (r"^fw\|g\|", forwarding.toggle_global),
         (r"^fw\|accs$", forwarding.account_picker),
@@ -194,6 +201,7 @@ def build_application(settings, log_buffer=None, log_access=None, health=None) -
         application.add_handler(CallbackQueryHandler(callback, pattern=pattern))
 
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text.text_input))
+    application.add_handler(MessageHandler(filters.PHOTO | filters.Document.IMAGE, text.photo_input))
     application.add_handler(MessageReactionHandler(text.on_reaction))
     return application
 
