@@ -41,6 +41,8 @@ class MessageFlowTests(unittest.IsolatedAsyncioTestCase):
         u = await h.tap(OWNER, "wz|message|pick|1009")
         self.assertIn("Send the message text", texts(u))
         u = await h.say(OWNER, "hello there")
+        self.assertIn("When should it be sent", texts(u))
+        u = await h.tap(OWNER, "wz|message|pick|0")
         self.assertIn("Message sent", texts(u))
         self.assertEqual(h.calls, [("send_existing", self.acc["id"], "1009", "hello there", OWNER)])
 
@@ -49,6 +51,7 @@ class MessageFlowTests(unittest.IsolatedAsyncioTestCase):
         await h.command(OWNER, "/message 1")
         await h.say(OWNER, "@mandal4482")
         u = await h.say(OWNER, "hi")
+        u = await h.say(OWNER, "now")  # the "when" step accepts typed text too
         self.assertIn("Message sent", texts(u))
         self.assertEqual(h.calls[0][2], "@mandal4482")
 
