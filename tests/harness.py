@@ -109,7 +109,7 @@ class Harness:
         p = self.parts
         handlers = {
             "start": p.start.start, "menu": p.start.menu, "cancel": p.start.cancel, "list": p.accounts.list_accounts,
-            "message": p.commands.message_command, "logs": p.logs.logs, "delay": p.start.moved,
+            "message": p.commands.message_command, "multi": p.commands.multi_command, "logs": p.logs.logs, "delay": p.start.moved,
             "onalltime": p.start.moved,
         }
         for kind in ("all", "alll", "allblock"):
@@ -138,7 +138,7 @@ class Harness:
             "acc_list": p.accounts.list_accounts, "logout": p.accounts.logout_menu, "lo": p.accounts.logout_select,
             "loc": p.accounts.logout_confirm, "acc": p.forwarding.account_screen, "bulk": p.commands.bulk_button,
             "msg_acc": p.commands.message_for_account, "stop_bulk": p.commands.stop_bulk, "logs": p.logs.logs,
-            "wz": p.engine.on_callback,
+            "wz": p.engine.on_callback, "pf": p.accounts.profile_button,
         }
         special = {
             "fw|home": p.forwarding.home, "fw|accs": p.forwarding.account_picker, "msg|start": p.commands.message_button,
@@ -157,6 +157,9 @@ class Harness:
 
     async def say(self, user_id: int, text: str) -> FakeUpdate:
         return await self._run(user_id, FakeUpdate(user_id, text=text), self.parts.text.text_input)
+
+    async def send_photo(self, user_id: int, data: bytes) -> FakeUpdate:
+        return await self._run(user_id, FakeUpdate(user_id, text=None).with_photo(data), self.parts.text.photo_input)
 
     async def finish_bulk(self, user_id: int) -> None:
         task = self.deps.bulk._tasks.get(user_id)
