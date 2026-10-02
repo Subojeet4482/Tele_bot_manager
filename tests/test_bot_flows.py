@@ -34,6 +34,8 @@ class BulkFlowTests(unittest.IsolatedAsyncioTestCase):
         u = await h.tap(OWNER, "wz|bulk_all|pick|3")
         self.assertIn("Send the message text", texts(u))
         u = await h.say(OWNER, "hello")
+        self.assertIn("When should it be sent", texts(u))
+        u = await h.tap(OWNER, "wz|bulk_all|pick|0")
         self.assertIn("Working on 2 account(s)", texts(u))
         await h.finish_bulk(OWNER)
         sent = [c for c in h.calls if c[0] == "send_existing"]
