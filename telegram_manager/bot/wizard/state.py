@@ -14,6 +14,8 @@ class WizardState:
     step: str | None = None
     page: int = 0
     cache: list | None = None
+    selected: list[str] = field(default_factory=list)  # ticked values of a multi-choice step
+    media: bytes | None = None  # a photo received by a photo step
     touched: float = field(default_factory=time.monotonic)
 
     def touch(self) -> None:
