@@ -5,7 +5,7 @@ connect, cx|otp|session  connecting an account
 acc_list, acc|<id>     accounts list and one account's screen
 logout, lo|<id>, loc|<id>   logout picker / confirm / do it
 fw|...                 forwarding switches
-bulk|<kind>, msg|start, msg_acc|<id>   start a wizard from a button
+bulk|<kind>, msg|start, msg_acc|<id>, pf|name|photo|bio|<id>   start a wizard from a button
 sched|home|new|off, adm|home|add|remove, logs|link
 wz|<wizard>|<action>|<arg>   inside step-by-step flows (see bot/wizard)
 """
@@ -18,6 +18,7 @@ BULK_TITLES = {
     "all": "📨 Message all accounts",
     "alll": "📤 Message all (opens chat)",
     "block": "🚫 Block on all accounts",
+    "multi": "👥 Message chosen accounts",
 }
 
 
@@ -43,6 +44,7 @@ def start_keyboard(is_owner: bool) -> Markup:
 def menu_keyboard(is_owner: bool) -> Markup:
     rows = [
         [Btn(BULK_TITLES["all"], callback_data="bulk|all"), Btn(BULK_TITLES["alll"], callback_data="bulk|alll")],
+        [Btn(BULK_TITLES["multi"], callback_data="bulk|multi")],
         [
             Btn(BULK_TITLES["block"], callback_data="bulk|block"),
             Btn("💬 Message from one account", callback_data="msg|start"),
@@ -96,6 +98,11 @@ def account_screen(account_id: str, labels: dict[str, str], back_to: str = "acc_
         [Btn(labels["b"], callback_data=f"fw|set|{account_id}|b")],
         [Btn(labels["c"], callback_data=f"fw|set|{account_id}|c")],
         [Btn("💬 Message from this account", callback_data=f"msg_acc|{account_id}")],
+        [
+            Btn("✏️ Name", callback_data=f"pf|name|{account_id}"),
+            Btn("🖼 Photo", callback_data=f"pf|photo|{account_id}"),
+            Btn("📝 Bio", callback_data=f"pf|bio|{account_id}"),
+        ],
         [Btn("🚪 Logout this account", callback_data=f"lo|{account_id}")],
         [Btn("⬅️ Back", callback_data=back_to)],
     ])
