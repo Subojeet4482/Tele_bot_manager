@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from datetime import time as dtime
 
-from telegram_manager.constants import BULK_DELAY_MAX, BULK_DELAY_MIN, MAX_TIMES_PER_DAY
+from telegram_manager.constants import BULK_DELAY_MAX, BULK_DELAY_MIN, MAX_TIMES_PER_DAY, WHEN_MAX_MINUTES
 
 _USERNAME = re.compile(r"^@?[A-Za-z][A-Za-z0-9_]{4,31}$")
 _CHAT_ID = re.compile(r"^-?\d{5,20}$")
@@ -50,6 +50,20 @@ def parse_delay(text: str, minimum: int = BULK_DELAY_MIN, maximum: int = BULK_DE
     if not minimum <= value <= maximum:
         raise ValueError(f"Delay must be between {minimum} and {maximum} seconds.")
     return value
+
+
+def parse_minutes(text: str, maximum: int = WHEN_MAX_MINUTES) -> int:
+    """\"now\", \"0\", \"15\", \"15m\", \"2h\" -> minutes to wait before sending (0 = now)."""
+    value = (text or "").strip().lower()
+    if value in ("now", "0"):
+        return 0
+    match = re.fullmatch(r"(\d{1,4})\s*(m|min|mins|minutes?|h|hr|hrs|hours?)?", value)
+    if not match:
+        raise ValueError("Send how long to wait, like 10 (minutes), 30m or 2h. Send 0 for now.")
+    minutes = int(match.group(1)) * (60 if (match.group(2) or "m").startswith("h") else 1)
+    if minutes > maximum:
+        raise ValueError(f"The longest wait is {maximum // 60} hours.")
+    return minutes
 
 
 def parse_time(text: str) -> dtime:
