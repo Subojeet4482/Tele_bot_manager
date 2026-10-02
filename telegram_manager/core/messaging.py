@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Awaitable, Callable
+from typing import Awaitable, Callable, Iterable
 
 from telethon.tl.functions.contacts import BlockRequest
 
@@ -13,6 +13,9 @@ from telegram_manager.errors import describe_error
 from telegram_manager.log_setup import mask_id
 
 logger = logging.getLogger(__name__)
+
+
+ProgressCallback = Callable[[BulkResult, str], Awaitable[None]]  # (result so far, account being worked on)
 
 
 class MessagingMixin:
@@ -50,6 +53,8 @@ class MessagingMixin:
         action: Callable[[str], Awaitable[None]],
         delay_seconds: int,
         what: str,
+        on_progress: ProgressCallback | None = None,
+        only_ids: Iterable[str] | None = None,
     ) -> BulkResult:
         """Run action(account_id) on every connected account of this admin.
 
@@ -60,7 +65,18 @@ class MessagingMixin:
         out real requests, not to pause on accounts that do nothing."""
         delay = max(BULK_DELAY_MIN, min(int(delay_seconds), BULK_DELAY_MAX))
         accounts = [a for a in await self.store.accounts.list(owner_id) if a.get("enabled", True)]
+        if only_ids is not None:
+            wanted = {str(item) for item in only_ids}
+            accounts = [a for a in accounts if str(a["id"]) in wanted]
         result = BulkResult(total=len(accounts))
+
+        async def report(current: str) -> None:
+            if on_progress is not None:
+                try:
+                    await on_progress(result, current)
+                except Exception:
+                    logger.debug("Progress callback failed", exc_info=True)
+
         pace = "all at once" if not delay else f"{delay}s apart"
         logger.info("Starting %s on %d account(s), %s", what, len(accounts), pace)
         runnable: list[tuple[int, str, str]] = []
@@ -72,8 +88,10 @@ class MessagingMixin:
             else:
                 logger.warning("%s: account %s/%s is not connected - skipped", what, index, len(accounts))
                 result.errors.append(f"{label}: skipped, this account is not connected right now")
+        await report("")
 
         async def run_one(index: int, account_id: str, label: str) -> None:
+            await report(label)
             try:
                 await action(account_id)
             except asyncio.CancelledError:
@@ -85,6 +103,7 @@ class MessagingMixin:
             else:
                 result.ok += 1
                 logger.info("%s: account %s/%s ok", what, index, len(accounts))
+            await report("")
 
         if delay == 0:
             await asyncio.gather(*(run_one(*item) for item in runnable))
@@ -96,28 +115,60 @@ class MessagingMixin:
         logger.info("Finished %s: %d ok, %d problem(s)", what, result.ok, len(result.errors))
         return result
 
-    async def send_all(self, owner_id: int, target: str, text: str, delay_seconds: int) -> BulkResult:
+    async def send_all(
+        self, owner_id: int, target: str, text: str, delay_seconds: int, on_progress: ProgressCallback | None = None
+    ) -> BulkResult:
         """/all: only chats that are already open in each account."""
         return await self._for_each_account(
             owner_id,
             lambda account_id: self.send_to_existing_dialog(account_id, target, text, owner_id),
             delay_seconds,
             "/all",
+            on_progress,
         )
 
-    async def send_all_any(self, owner_id: int, target: str, text: str, delay_seconds: int) -> BulkResult:
+    async def send_all_any(
+        self, owner_id: int, target: str, text: str, delay_seconds: int, on_progress: ProgressCallback | None = None
+    ) -> BulkResult:
         """/alll: opens the chat if needed. Accounts are always at least OPEN_CHAT_MIN_DELAY apart."""
         return await self._for_each_account(
             owner_id,
             lambda account_id: self.send_to_any(account_id, target, text, owner_id),
             max(int(delay_seconds), OPEN_CHAT_MIN_DELAY),
             "/alll",
+            on_progress,
         )
 
-    async def block_all(self, owner_id: int, target: str, delay_seconds: int) -> BulkResult:
+    async def block_all(
+        self, owner_id: int, target: str, delay_seconds: int, on_progress: ProgressCallback | None = None
+    ) -> BulkResult:
         return await self._for_each_account(
             owner_id,
             lambda account_id: self.block_on_account(account_id, target, owner_id),
             delay_seconds,
             "/allblock",
+            on_progress,
+        )
+
+    async def send_selected(
+        self,
+        owner_id: int,
+        account_ids: Iterable[str],
+        target: str,
+        text: str,
+        delay_seconds: int,
+        open_chat: bool = True,
+        on_progress: ProgressCallback | None = None,
+    ) -> BulkResult:
+        """/multi (and a timed /message): only the accounts the admin picked.
+        open_chat=True opens the chat if needed, so accounts stay at least OPEN_CHAT_MIN_DELAY apart."""
+        send = self.send_to_any if open_chat else self.send_to_existing_dialog
+        delay = max(int(delay_seconds), OPEN_CHAT_MIN_DELAY) if open_chat else int(delay_seconds)
+        return await self._for_each_account(
+            owner_id,
+            lambda account_id: send(account_id, target, text, owner_id),
+            delay,
+            "/multi" if open_chat else "/message",
+            on_progress,
+            only_ids=account_ids,
         )
