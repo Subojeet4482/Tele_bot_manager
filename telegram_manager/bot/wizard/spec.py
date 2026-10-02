@@ -48,6 +48,8 @@ class Step:
     sensitive: bool = False  # the user's message is deleted right after it is read
     skip: Callable[[WizardContext], bool] | None = None
     back_key: str | None = None  # where Back goes, if not simply the previous step
+    multi: bool = False  # several choices can be ticked; Done answers with the ticked values
+    photo: bool = False  # the answer is a photo sent to the chat (its bytes land in state.media)
 
 
 @dataclass
