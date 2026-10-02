@@ -8,6 +8,8 @@ from telegram_manager.bot.flows.common import (
     preview,
     target_step,
     text_step,
+    when_step,
+    when_text,
 )
 from telegram_manager.bot.wizard.spec import WizardContext, WizardSpec
 from telegram_manager.constants import (
@@ -53,6 +55,8 @@ def _build(deps, kind: str) -> WizardSpec:
             lines.append(f"✉️ {preview(answers['text'])}")
         if "delay" in answers:
             lines.append(f"⏱ {delay_text(answers['delay'])}")
+        if answers.get("when"):
+            lines.append(f"⏰ in {when_text(answers['when'])}")
         lines.append("\nTap ✅ Confirm to continue.")
         return "\n".join(lines)
 
@@ -65,11 +69,19 @@ def _build(deps, kind: str) -> WizardSpec:
     ]
     if needs_text:
         steps.append(text_step("✉️ Send the message text."))
+        steps.append(when_step())
 
     async def finish(wc: WizardContext) -> None:
         answers = wc.answers
         await deps.bulk.launch(
-            wc.update, wc.context, wc.user_id, kind, answers["target"], answers.get("text"), answers["delay"]
+            wc.update,
+            wc.context,
+            wc.user_id,
+            kind,
+            answers["target"],
+            answers.get("text"),
+            answers["delay"],
+            start_in=answers.get("when", 0) * 60,
         )
 
     return WizardSpec(name=f"bulk_{kind}", title=title, steps=steps, finish=finish, back_to="menu")
