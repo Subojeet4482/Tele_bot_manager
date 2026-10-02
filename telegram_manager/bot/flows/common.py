@@ -4,8 +4,8 @@ from __future__ import annotations
 from typing import Awaitable, Callable
 
 from telegram_manager.bot.wizard.spec import Choice, Step, WizardAbort, WizardContext
-from telegram_manager.constants import BULK_DELAY_MAX
-from telegram_manager.parsing import parse_delay, parse_target
+from telegram_manager.constants import BULK_DELAY_MAX, WHEN_PRESETS
+from telegram_manager.parsing import parse_delay, parse_minutes, parse_target
 
 
 def static(text: str) -> Callable[[WizardContext], Awaitable[str]]:
@@ -64,3 +64,27 @@ def text_step(ask: str) -> Step:
         return text
 
     return Step("text", static(ask), parse)
+
+
+def when_text(minutes: int) -> str:
+    if not minutes:
+        return "now"
+    hours, rest = divmod(minutes, 60)
+    return " ".join(part for part in (f"{hours} h" if hours else "", f"{rest} min" if rest else "") if part)
+
+
+def when_step() -> Step:
+    """When to send: now, or after a wait. The wait lives in the running bot, so a restart cancels it."""
+
+    async def parse(wc: WizardContext, raw: str) -> int:
+        return parse_minutes(raw)
+
+    async def choices(wc: WizardContext) -> list[Choice]:
+        return [Choice("⚡ Now" if n == 0 else (f"{n} min" if n < 60 else f"{n // 60} hour"), str(n)) for n in WHEN_PRESETS]
+
+    intro = (
+        "⏰ When should it be sent?\n\n"
+        "Tap a value, or type the wait: 10 (minutes), 30m, 2h (up to 24 hours).\n"
+        "A timed message waits inside the bot: if the bot restarts before it is sent, it is cancelled."
+    )
+    return Step("when", static(intro), parse, choices, columns=3)
