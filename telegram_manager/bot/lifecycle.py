@@ -18,6 +18,7 @@ BOT_COMMANDS = [
     BotCommand("list", "My connected accounts"),
     BotCommand("all", "Message @user from all my accounts (existing chats)"),
     BotCommand("alll", "Message @user from all my accounts (opens chat)"),
+    BotCommand("multi", "Message @user from accounts I choose"),
     BotCommand("allblock", "Block @user on all my accounts"),
     BotCommand("message", "Message from one account"),
     BotCommand("usermessage", "User-message forwarding for an account"),
