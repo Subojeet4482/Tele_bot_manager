@@ -9,7 +9,31 @@ from telegram_manager.errors import describe_error, explain_send_error
 logger = logging.getLogger(__name__)
 
 
+MAX_PHOTO_BYTES = 10 * 1024 * 1024  # Telegram accepts profile photos far below this
+
+
 class TextHandlers(HandlerBase):
+    async def photo_input(self, update, context) -> None:
+        """A photo (or image file) sent to the bot: only used by a step that asks for one."""
+        if not await self.guard.allow(update):
+            return
+        message = update.effective_message
+        state = self.engine.active(context)
+        if state is None or message is None:
+            return
+        source = message.photo[-1] if getattr(message, "photo", None) else getattr(message, "document", None)
+        if source is None:
+            return
+        if getattr(source, "file_size", 0) and source.file_size > MAX_PHOTO_BYTES:
+            await message.reply_text("❌ That image is too big. Send one under 10 MB.")
+            return
+        try:
+            data = bytes(await (await source.get_file()).download_as_bytearray())
+        except Exception as exc:
+            await message.reply_text(f"❌ Could not read that photo: {describe_error(exc)}")
+            return
+        await self.engine.on_photo(update, context, data)
+
     async def text_input(self, update, context) -> None:
         if not await self.guard.allow(update):
             return
