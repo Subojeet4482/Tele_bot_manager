@@ -7,6 +7,10 @@ OPEN_CHAT_MIN_DELAY = 3  # /alll and the daily broadcast open new chats, so keep
 DELAY_PRESETS = (0, 1, 3, 5, 10, 30)
 OPEN_CHAT_DELAY_PRESETS = (3, 5, 10, 30, 60)
 
+# --- timed messages ("send in N minutes") -------------------------------------
+WHEN_PRESETS = (0, 1, 5, 15, 30, 60)  # minutes; 0 = now
+WHEN_MAX_MINUTES = 24 * 60
+
 # --- daily broadcast ----------------------------------------------------------
 MAX_TIMES_PER_DAY = 1440
 COUNT_PRESETS = (1, 2, 3, 4, 6, 12)
