@@ -54,7 +54,7 @@ def install() -> None:
     _module("telegram.error", BadRequest=BadRequest, NetworkError=NetworkError, Conflict=Conflict)
     _module("telegram.ext", Application=_Any, ApplicationBuilder=_Any, CallbackQueryHandler=_Any,
             CommandHandler=_Any, MessageHandler=_Any, MessageReactionHandler=_Any, TypeHandler=_Any,
-            filters=types.SimpleNamespace(TEXT=1, COMMAND=2))
+            filters=types.SimpleNamespace(TEXT=1, COMMAND=2, PHOTO=3, Document=types.SimpleNamespace(IMAGE=4)))
 
     class _Client:
         def __init__(self, *args, **kwargs):
@@ -78,6 +78,8 @@ def install() -> None:
     _module("telethon.tl.functions")
     _module("telethon.tl.functions.contacts", BlockRequest=_Any)
     _module("telethon.tl.functions.messages", SendReactionRequest=_Any)
+    _module("telethon.tl.functions.account", UpdateProfileRequest=_Any)
+    _module("telethon.tl.functions.photos", UploadProfilePhotoRequest=_Any)
     _module("telethon.tl.types", ReactionEmoji=_Any)
 
 
