@@ -74,13 +74,26 @@ class FakeMessage:
         self.replies: list[tuple[str, object]] = []
         self.deleted = False
         self.reply_to_message = None
+        self.photo = None
         self.message_id = next(_ids)
 
     async def reply_text(self, text, reply_markup=None, **kwargs):
         self.replies.append((text, reply_markup))
+        return SimpleNamespace(message_id=next(_ids))  # like python-telegram-bot: the sent Message
 
     async def delete(self):
         self.deleted = True
+
+
+class FakePhotoFile:
+    def __init__(self, data):
+        self._data = data
+
+    async def get_file(self):
+        return self
+
+    async def download_as_bytearray(self):
+        return bytearray(self._data)
 
 
 class FakeQuery:
@@ -109,6 +122,12 @@ class FakeUpdate:
             self.callback_query = None
             self.effective_message = FakeMessage(text)
 
+    def with_photo(self, data: bytes) -> "FakeUpdate":
+        photo = FakePhotoFile(data)
+        photo.file_size = len(data)
+        self.effective_message.photo = [photo]
+        return self
+
     def last(self):
         """(text, markup) of the latest thing the bot showed."""
         if self.callback_query is not None:
@@ -119,6 +138,11 @@ class FakeUpdate:
 class FakeBot:
     def __init__(self):
         self.sent: list[tuple[int, str]] = []
+        self.edits: list[tuple[int, int, str]] = []  # (chat, message id, text) of edit_message_text calls
+
+    async def edit_message_text(self, chat_id, message_id, text, reply_markup=None, **kwargs):
+        self.edits.append((chat_id, message_id, text))
+        self.sent.append((chat_id, text))  # an edit is also something the user sees
 
     async def send_message(self, chat_id, text, **kwargs):
         self.sent.append((chat_id, text))
