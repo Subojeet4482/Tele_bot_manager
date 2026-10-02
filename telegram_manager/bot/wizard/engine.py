@@ -94,6 +94,19 @@ class WizardEngine:
         await self._answer(wc, text)
         return True
 
+    async def on_photo(self, update, context, data: bytes) -> bool:
+        """Feed a received photo to the running flow. False if no flow is waiting for one."""
+        state = self.active(context)
+        if state is None or state.name not in self.specs or state.step is None:
+            return False
+        wc = self._wc(update, context, state)
+        if not self._step(wc).photo:
+            return False
+        state.touch()
+        state.media = data
+        await self._answer(wc, "photo")
+        return True
+
     async def on_callback(self, update, context) -> None:
         """Buttons inside a flow: wz|<name>|pick|<value>, back, cancel, page|<n>."""
         if not await self.deps.guard.allow(update):
@@ -117,6 +130,8 @@ class WizardEngine:
         state.touch()
         if action == "pick":
             await self._answer(wc, arg)
+        elif action in ("tog", "all", "none", "done"):
+            await self._multi(wc, action, arg)
         elif action == "back":
             await self._back(wc)
         elif action == "cancel":
@@ -127,6 +142,30 @@ class WizardEngine:
             except ValueError:
                 state.page = 0
             await self._render(wc)
+
+    async def _multi(self, wc: WizardContext, action: str, arg: str) -> None:
+        """Tick / untick choices of a multi-choice step, then Done answers with the ticked ones."""
+        step = self._step(wc)
+        if not step.multi or step.choices is None:
+            return
+        if wc.state.cache is None:
+            wc.state.cache = await step.choices(wc)
+        values = [choice.value for choice in wc.state.cache]
+        selected = wc.state.selected
+        if action == "tog" and arg in values:
+            if arg in selected:
+                selected.remove(arg)
+            else:
+                selected.append(arg)
+        elif action == "all":
+            wc.state.selected = list(values)
+        elif action == "none":
+            wc.state.selected = []
+        elif action == "done":
+            ordered = [value for value in values if value in selected]
+            await self._answer(wc, ",".join(ordered))
+            return
+        await self._render(wc)
 
     # --- moving between steps -------------------------------------------------------------------
     async def _advance(self, wc: WizardContext) -> None:
@@ -218,10 +257,15 @@ class WizardEngine:
         rows: list[list[Btn]] = []
         row: list[Btn] = []
         for choice in shown:
-            data = f"wz|{name}|pick|{choice.value}"
+            if step.multi:
+                data = f"wz|{name}|tog|{choice.value}"
+                text = f"{'☑️' if choice.value in wc.state.selected else '⬜'} {choice.label}"
+            else:
+                data = f"wz|{name}|pick|{choice.value}"
+                text = choice.label
             if len(data.encode()) > 64:
                 continue  # Telegram would reject the whole keyboard
-            row.append(Btn(choice.label, callback_data=data))
+            row.append(Btn(text, callback_data=data))
             if len(row) == step.columns:
                 rows.append(row)
                 row = []
@@ -236,6 +280,12 @@ class WizardEngine:
             if page < pages - 1:
                 nav.append(Btn("Next ▶️", callback_data=f"wz|{name}|page|{page + 1}"))
             rows.append(nav)
+        if step.multi:
+            rows.append([
+                Btn("☑️ Select all", callback_data=f"wz|{name}|all"),
+                Btn("⬜ Clear", callback_data=f"wz|{name}|none"),
+            ])
+            rows.append([Btn(f"✅ Done ({len(wc.state.selected)} picked)", callback_data=f"wz|{name}|done")])
         rows.append(
             [Btn("⬅️ Back", callback_data=f"wz|{name}|back"), Btn("❌ Cancel", callback_data=f"wz|{name}|cancel")]
         )
