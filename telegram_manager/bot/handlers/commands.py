@@ -6,7 +6,7 @@ import re
 from telegram_manager.bot import keyboards, ui
 from telegram_manager.bot.flows.bulk import KINDS
 from telegram_manager.bot.handlers.base import HandlerBase
-from telegram_manager.constants import BULK_DELAY_MAX
+from telegram_manager.constants import BULK_DELAY_MAX, OPEN_CHAT_MIN_DELAY
 from telegram_manager.errors import describe_error
 from telegram_manager.parsing import parse_bulk_args, parse_target
 
@@ -24,9 +24,42 @@ class CommandHandlers(HandlerBase):
         if not await self.entry(update):
             return
         kind = self.arg(update)
-        if kind not in KINDS or await self.accounts_or_notice(update) is None:
+        if (kind not in KINDS and kind != "multi") or await self.accounts_or_notice(update) is None:
             return
-        await self.engine.start(update, context, f"bulk_{kind}")
+        await self.engine.start(update, context, "multi" if kind == "multi" else f"bulk_{kind}")
+
+    async def multi_command(self, update, context) -> None:
+        """/multi @user hello [3sec] [Y]: then pick which accounts send it."""
+        if not await self.guard.allow(update):
+            return
+        if await self.accounts_or_notice(update) is None:
+            return
+        try:
+            args = parse_bulk_args("alll", self.command_args(update))
+        except ValueError as exc:
+            await ui.show(update, f"❌ {exc}\n\nExample: /multi @user your message", keyboards.back("menu", "⚙️ Menu"))
+            return
+        if args.delay is not None and not OPEN_CHAT_MIN_DELAY <= args.delay <= BULK_DELAY_MAX:
+            await ui.show(
+                update,
+                f"❌ The delay must be between {OPEN_CHAT_MIN_DELAY} and {BULK_DELAY_MAX} seconds.",
+                keyboards.back("menu", "⚙️ Menu"),
+            )
+            return
+        if args.confirmed is False:
+            await ui.show(update, "❌ Cancelled.", keyboards.back("menu", "⚙️ Menu"))
+            return
+        answers: dict = {}
+        if args.target:
+            answers["target"] = args.target
+        if args.text:
+            answers["text"] = args.text
+        if args.delay is not None:
+            answers["delay"] = args.delay
+        if args.confirmed:
+            answers["confirmed"] = True
+            answers["when"] = 0  # fully specified one-liner: no timer question
+        await self.engine.start(update, context, "multi", answers)
 
     async def bulk_command(self, update, context, kind: str) -> None:
         if not await self.guard.allow(update):
@@ -54,6 +87,7 @@ class CommandHandlers(HandlerBase):
             answers["target"] = args.target
         if args.text:
             answers["text"] = args.text
+            answers["when"] = 0  # a command that already carries its message sends now
         if args.delay is not None:
             answers["delay"] = args.delay
         if args.confirmed:
