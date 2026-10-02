@@ -6,7 +6,7 @@
 
 [**Open the bot → @telethon_manager_bot**](https://t.me/telethon_manager_bot)
 
-`Python 3.11+` · `Telethon` · `python-telegram-bot` · `Firebase Firestore` · `122 tests passing`
+`Python 3.11+` · `Telethon` · `python-telegram-bot` · `Firebase Firestore` · `145 tests passing`
 
 </div>
 
@@ -22,7 +22,10 @@
 
 - **Many accounts, one bot.** Log in with a phone number (+ 2-step password) or a Telethon session string.
 - **Forwarding inbox.** Incoming messages from your accounts arrive in the bot, sorted into **user (DMs) / bot / channel (everything else)**, each with its own on/off switch. Reply or react to a forwarded message and it is sent back through the right account.
-- **Bulk actions.** Message or block one user from all your accounts, with a delay between accounts.
+- **Bulk actions with live progress.** Message or block one user from all your accounts, with a delay between accounts. One message updates as it goes: a progress bar, how many went through, how many failed, how many are left.
+- **`/multi`.** Message a user from only the accounts you tick.
+- **Timed messages.** Send now, or after a wait (minutes up to 24 hours), from one account or many.
+- **Account profile.** Change an account's name, bio and profile photo from the bot.
 - **Daily broadcast.** Schedule a message to go out from all accounts at set times.
 - **Multi-admin.** The owner adds admins; every admin sees and controls only their own accounts.
 - **Safe by design.** Sessions and API hashes are encrypted, secrets typed in chat are deleted, logs hold no message text.
@@ -31,7 +34,7 @@
 ## ⚠️ Safety and Telegram rules
 
 - Use this only for accounts you own or are explicitly allowed to manage. Follow Telegram's Terms of Service, rate limits and anti-spam rules.
-- `/alll` and the daily broadcast open new chats, so they always keep **at least 3 seconds** between accounts.
+- `/alll`, `/multi` and the daily broadcast open new chats, so they always keep **at least 3 seconds** between accounts.
 - OTP codes, 2-step passwords, API hashes and session strings are **deleted from the chat right after they are read**. OTPs and passwords are never stored; API hashes and sessions are encrypted before going to Firestore.
 - Keep `SESSION_ENCRYPTION_KEY` private and backed up.
 - Logs never contain message texts, secrets or raw chat/sender/user ids (ids appear as short masked tags like `#a1b2c3`).
@@ -68,6 +71,7 @@ Set `OWNER_ID` to your numeric Telegram ID (ask [@userinfobot](https://t.me/user
 | `/all` | Message a user from all your accounts (existing chats only) |
 | `/alll` | Same, but opens the chat if needed (at least 3 sec between accounts) |
 | `/allblock` | Block a user on all your accounts |
+| `/multi` | Message a user from the accounts **you choose** (tick them, then Done; opens the chat if needed) |
 | `/message` | Send from one account (pick account → chat → text) |
 | `/usermessage` `/botmessage` `/channelmessage` | Forwarding switch for one account (opens a screen with buttons) |
 | `/list` | Your accounts |
@@ -132,6 +136,37 @@ Bot: Working on 5 account(s) …            →  "✅ Message sent: 5/5 accounts
 - **Delay 0:** all accounts act at the same moment. **Delay N:** one account acts, the bot waits N seconds, then the next.
 - `/alll` accepts 3–100 seconds only. `/allblock` has the same steps as `/all` but no message question.
 - Offline accounts are reported and skipped without waiting. **🛑 Stop** (or `/cancel`) stops a running job.
+
+### Live progress
+
+While a bulk action runs, the bot keeps editing one message instead of staying silent:
+
+```
+📨 Sending (@mandal4482)
+██████░░░░  6/10
+✅ Done: 5    ❌ Failed: 1    ⏳ Left: 4
+➡️ Now: Account 7
+```
+
+When it ends, the same message turns into the result (with the reason for every failure). **🛑 Stop** is under it the whole time.
+
+### `/multi`: choose the accounts
+
+```
+/multi @mandal4482 hi          → shows your accounts to tick
+```
+
+1. Tap accounts to tick or untick them (☑️ / ⬜). **Select all** and **Clear** are there too. You can also type numbers (`1 3 5`) or `all`.
+2. Press **Done**. With more than one account it asks the delay (3–100 sec, because chats may be opened). With one account it skips that question.
+3. Pick when to send, check the summary, and confirm.
+
+`/multi @user hi 5sec Y` already has everything, so it only asks which accounts.
+
+### Timed messages
+
+`/message`, `/all`, `/alll` and `/multi` ask **⏰ When should it be sent?**: Now, 1, 5, 15, 30 or 60 minutes, or type your own (`10`, `30m`, `2h`, up to 24 hours). A command that already carries its message (`/all @user hi Y`) sends now.
+
+The wait lives inside the running bot: **if the bot restarts or redeploys before the time comes, the message is cancelled.** While one is waiting, other bulk actions wait too; tap **Stop** to cancel it.
 
 ### One-line forms
 
@@ -228,7 +263,7 @@ Health uses a bot heartbeat (`get_me` every minute) and the connection watchdog.
 python -m unittest discover -s tests -v
 ```
 
-**122 tests, all passing.** They cover parsing, phone masking and lookup, config, the web server (health states, one-time login, cookies), Firestore isolation between admins, every wizard (bulk, message, connect with 2-step password and Back, daily broadcast, admin add/remove), access control, per-admin forwarding, user/bot/channel detection and bulk timing.
+**145 tests, all passing.** They cover parsing, phone masking and lookup, config, the web server (health states, one-time login, cookies), Firestore isolation between admins, every wizard (bulk, message, connect with 2-step password and Back, daily broadcast, admin add/remove), access control, per-admin forwarding, user/bot/channel detection and bulk timing.
 
 Without the Telegram/Telethon libraries installed, the tests use tiny stand-ins (`tests/stubs.py`); with them installed nothing is replaced.
 
