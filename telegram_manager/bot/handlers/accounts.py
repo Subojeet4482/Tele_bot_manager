@@ -19,6 +19,24 @@ class AccountHandlers(HandlerBase):
         method = self.arg(update)
         await self.engine.start(update, context, "cx_session" if method == "session" else "cx_otp")
 
+    # --- profile ---------------------------------------------------------------------------
+    async def profile_button(self, update, context) -> None:
+        """Account screen buttons pf|name|<id>, pf|photo|<id>, pf|bio|<id>."""
+        if not await self.entry(update):
+            return
+        what, _, account_id = self.arg(update).partition("|")
+        if what not in ("name", "photo", "bio"):
+            return
+        account = await self.own_account(update, account_id)
+        if account is None:
+            return
+        if not self.manager.is_online(str(account["id"])):
+            await ui.show(
+                update, "🔴 This account is offline right now, so its profile cannot be changed.", keyboards.back(f"acc|{account_id}")
+            )
+            return
+        await self.engine.start(update, context, f"pf_{what}", {"account": str(account["id"])})
+
     # --- list ------------------------------------------------------------------------------
     async def list_screen(self, update, context) -> None:
         accounts = await self.store.accounts.list(self.uid(update))
@@ -31,7 +49,7 @@ class AccountHandlers(HandlerBase):
             label = self.manager.label_for_account(account)
             phone = f" · {account['phone_masked']}" if account.get("phone_masked") else ""
             lines.append(f"{account.get('number')}. {label}{phone} {'🟢' if online else '🔴 offline'}")
-        lines += ["", "Tap an account to change its forwarding, message from it, or log it out."]
+        lines += ["", "Tap an account to change its forwarding or profile (name, photo, bio), message from it, or log it out."]
         await ui.show(update, "\n".join(lines), keyboards.accounts_list(accounts, self.manager.is_online))
 
     async def list_accounts(self, update, context) -> None:
