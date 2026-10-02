@@ -23,6 +23,14 @@ class BulkResult:
     ok: int = 0
     errors: list[str] = field(default_factory=list)
 
+    @property
+    def failed(self) -> int:
+        return len(self.errors)
+
+    @property
+    def done(self) -> int:
+        return self.ok + self.failed
+
 
 @dataclass
 class DailyJob:
